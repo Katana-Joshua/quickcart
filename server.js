@@ -22,10 +22,16 @@ app.use('/api/cart', require('./routes/cart'));
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/upload', require('./routes/upload')); // Simple upload route (no auth required)
+app.use('/api/panel', require('./routes/admin_panel')); // Admin panel routes (no auth required)
 
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'QuickCart API is running' });
+});
+
+// Admin panel route
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
 // Error handling middleware
@@ -40,5 +46,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Network access: http://192.168.1.5:${PORT}/api/health`);
   console.log(`Image Upload Page: http://localhost:${PORT}/upload.html`);
   console.log(`Image Upload Page (Network): http://192.168.1.5:${PORT}/upload.html`);
+  console.log(`Admin Panel: http://localhost:${PORT}/admin`);
+  console.log(`Admin Panel (Network): http://192.168.1.5:${PORT}/admin`);
 });
 
