@@ -2,15 +2,17 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
+const compression = require('compression');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
+app.use(compression()); // Enable gzip compression for responses
 app.use(cors());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json({ limit: '10mb' })); // Limit JSON payload size
+app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve static files (upload page)
 app.use(express.static(path.join(__dirname, 'public')));
@@ -39,7 +41,7 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ error: 'Something went wrong!' });
 });
-
+ 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`QuickCart API server is running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);

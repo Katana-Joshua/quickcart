@@ -8,8 +8,11 @@ router.get('/', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
 
+    // Optimize: Don't select full image_data for cart list
     const [cartItems] = await pool.execute(
-      `SELECT c.*, p.name, p.price, p.image_url, p.image_data, p.stock_quantity 
+      `SELECT c.id, c.user_id, c.product_id, c.quantity, c.created_at,
+       p.name, p.price, p.image_url, p.stock_quantity,
+       CASE WHEN p.image_data IS NOT NULL THEN 1 ELSE 0 END as has_image
        FROM cart c 
        JOIN products p ON c.product_id = p.id 
        WHERE c.user_id = ? 
@@ -17,11 +20,29 @@ router.get('/', authenticateToken, async (req, res) => {
       [userId]
     );
 
-    // Convert image_data to base64 data URL if available
-    const cartItemsWithImages = cartItems.map(item => ({
-      ...item,
-      image_url: item.image_data ? `data:image/jpeg;base64,${item.image_data}` : item.image_url
-    }));
+    // Convert to response format - include image URL if available
+    const cartItemsWithImages = cartItems.map(item => {
+      const result = {
+        id: item.id,
+        user_id: item.user_id,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        name: item.name,
+        price: item.price.toString(),
+        stock_quantity: item.stock_quantity,
+        created_at: item.created_at
+      };
+      
+      // Include image URL if available
+      if (item.image_url) {
+        result.image_url = item.image_url;
+      } else if (item.has_image) {
+        // If image_data exists, construct data URL endpoint
+        result.image_url = `/api/products/${item.product_id}/image`;
+      }
+      
+      return result;
+    });
 
     // Calculate subtotal
     const subtotal = cartItemsWithImages.reduce((sum, item) => {
