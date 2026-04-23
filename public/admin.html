@@ -238,10 +238,9 @@
         </header>
 
         <div class="tabs">
-            <button class="tab active" onclick="showTab('products')">Products</button>
-            <button class="tab" onclick="showTab('categories')">Categories</button>
-            <button class="tab" onclick="showTab('orders')">Orders</button>
-            <button class="tab" onclick="showTab('upload')">Upload Images</button>
+            <button type="button" class="tab active" onclick="showTab('products', this)">Products</button>
+            <button type="button" class="tab" onclick="showTab('categories', this)">Categories</button>
+            <button type="button" class="tab" onclick="showTab('orders', this)">Orders</button>
         </div>
 
         <div id="message" class="message"></div>
@@ -259,7 +258,7 @@
                             <th>ID</th>
                             <th>Image</th>
                             <th>Name</th>
-                            <th>Price</th>
+                            <th>Price (UGX)</th>
                             <th>Category</th>
                             <th>Stock</th>
                             <th>Featured</th>
@@ -302,7 +301,7 @@
                         <tr>
                             <th>Order #</th>
                             <th>Customer</th>
-                            <th>Total</th>
+                            <th>Total (UGX)</th>
                             <th>Status</th>
                             <th>Date</th>
                             <th>Actions</th>
@@ -313,30 +312,6 @@
             </div>
         </div>
 
-        <!-- Upload Images Tab -->
-        <div id="upload" class="tab-content">
-            <h2>Upload Images</h2>
-            <form id="uploadForm" style="max-width: 500px;">
-                <div class="form-group">
-                    <label>Type:</label>
-                    <select id="uploadType" required>
-                        <option value="">Select type...</option>
-                        <option value="product">Product</option>
-                        <option value="category">Category</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>ID:</label>
-                    <input type="number" id="uploadId" min="1" required placeholder="Enter ID">
-                </div>
-                <div class="form-group">
-                    <label>Image File:</label>
-                    <input type="file" id="uploadImage" accept="image/*" required>
-                    <div id="uploadPreview" style="margin-top: 15px; text-align: center;"></div>
-                </div>
-                <button type="submit">Upload Image</button>
-            </form>
-        </div>
     </div>
 
     <!-- Product Modal -->
@@ -354,10 +329,21 @@
                     <label>Description</label>
                     <textarea id="productDescription"></textarea>
                 </div>
+                <div class="form-group">
+                    <label>Product image (optional for new; replaces existing when editing)</label>
+                    <input type="file" id="productImageFile" accept="image/*">
+                    <div id="productImagePreview" style="margin-top: 12px;"></div>
+                </div>
+                <div class="form-group" id="productRemoveImageRow" style="display: none;">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="productRemoveImage">
+                        <label for="productRemoveImage">Remove product image (no new file)</label>
+                    </div>
+                </div>
                 <div class="form-grid">
                     <div class="form-group">
-                        <label>Price *</label>
-                        <input type="number" id="productPrice" step="0.01" required>
+                        <label>Price (UGX) *</label>
+                        <input type="number" id="productPrice" min="0" step="1" required placeholder="e.g. 150000">
                     </div>
                     <div class="form-group">
                         <label>Category</label>
@@ -397,6 +383,17 @@
                     <label>Description</label>
                     <textarea id="categoryDescription"></textarea>
                 </div>
+                <div class="form-group">
+                    <label>Category image (optional; replaces when editing)</label>
+                    <input type="file" id="categoryImageFile" accept="image/*">
+                    <div id="categoryImagePreview" style="margin-top: 12px;"></div>
+                </div>
+                <div class="form-group" id="categoryRemoveImageRow" style="display: none;">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="categoryRemoveImage">
+                        <label for="categoryRemoveImage">Remove category image</label>
+                    </div>
+                </div>
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
                     <button type="submit">Save</button>
                     <button type="button" class="secondary" onclick="closeModal('categoryModal')">Cancel</button>
@@ -418,13 +415,18 @@
         const API_BASE = '/api/panel';
         let categories = [];
 
+        function formatUgx(n) {
+            const x = parseFloat(n);
+            if (Number.isNaN(x)) return '0';
+            return Math.round(x).toLocaleString('en-UG');
+        }
+
         // Tab switching
-        function showTab(tabName) {
+        function showTab(tabName, tabButton) {
             document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
             document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
             document.getElementById(tabName).classList.add('active');
-            event.target.classList.add('active');
-            
+            if (tabButton) tabButton.classList.add('active');
             if (tabName === 'products') loadProducts();
             if (tabName === 'categories') loadCategories();
             if (tabName === 'orders') loadOrders();
@@ -441,14 +443,13 @@
                         <td>${p.id}</td>
                         <td><img src="${p.image_url || 'https://via.placeholder.com/60'}" class="image-preview" onerror="this.src='https://via.placeholder.com/60'"></td>
                         <td>${p.name}</td>
-                        <td>$${parseFloat(p.price).toFixed(2)}</td>
+                        <td>UGX ${formatUgx(p.price)}</td>
                         <td>${p.category_name || 'N/A'}</td>
                         <td>${p.stock_quantity}</td>
                         <td>${p.is_featured ? '<span class="badge success">Yes</span>' : '<span class="badge">No</span>'}</td>
                         <td class="actions">
                             <button onclick="editProduct(${p.id})" class="secondary">Edit</button>
                             <button onclick="deleteProduct(${p.id})" class="danger">Delete</button>
-                            <button onclick="uploadProductImage(${p.id})" class="success">Upload Image</button>
                         </td>
                     </tr>
                 `).join('');
@@ -472,7 +473,6 @@
                         <td class="actions">
                             <button onclick="editCategory(${c.id})" class="secondary">Edit</button>
                             <button onclick="deleteCategory(${c.id})" class="danger">Delete</button>
-                            <button onclick="uploadCategoryImage(${c.id})" class="success">Upload Image</button>
                         </td>
                     </tr>
                 `).join('');
@@ -496,7 +496,7 @@
                     <tr>
                         <td>${o.order_number}</td>
                         <td>${o.full_name}<br><small>${o.email}</small></td>
-                        <td>$${parseFloat(o.total).toFixed(2)}</td>
+                        <td>UGX ${formatUgx(o.total)}</td>
                         <td><span class="badge ${o.status === 'Pending' ? 'warning' : 'success'}">${o.status}</span></td>
                         <td>${new Date(o.created_at).toLocaleDateString()}</td>
                         <td><button onclick="viewOrder(${o.id})">View Details</button></td>
@@ -512,6 +512,10 @@
             document.getElementById('productModalTitle').textContent = id ? 'Edit Product' : 'Add Product';
             document.getElementById('productForm').reset();
             document.getElementById('productId').value = id || '';
+            document.getElementById('productImageFile').value = '';
+            document.getElementById('productImagePreview').innerHTML = '';
+            document.getElementById('productRemoveImage').checked = false;
+            document.getElementById('productRemoveImageRow').style.display = id ? 'block' : 'none';
             if (id) {
                 fetch(`${API_BASE}/products/${id}`)
                     .then(r => r.json())
@@ -522,29 +526,43 @@
                         document.getElementById('productPrice').value = p.price;
                         document.getElementById('productCategory').value = p.category_id || '';
                         document.getElementById('productStock').value = p.stock_quantity;
-                        document.getElementById('productFeatured').checked = p.is_featured;
+                        document.getElementById('productFeatured').checked = !!p.is_featured;
+                        if (p.image_url) {
+                            document.getElementById('productImagePreview').innerHTML = '<p style="font-size:13px;color:#666">Current image:</p><img src="' + p.image_url + '" class="image-preview" style="max-width:140px;border-radius:8px" onerror="this.style.display=\'none\'">';
+                        }
                     });
             }
             document.getElementById('productModal').classList.add('active');
         }
 
+        document.getElementById('productImageFile').addEventListener('change', function(e) {
+            const f = e.target.files[0];
+            if (!f) return;
+            const r = new FileReader();
+            r.onload = function(ev) {
+                document.getElementById('productImagePreview').innerHTML = '<p style="font-size:13px;color:#666">New image:</p><img src="' + ev.target.result + '" style="max-width:140px;border-radius:8px">';
+            };
+            r.readAsDataURL(f);
+        });
+
         document.getElementById('productForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const id = document.getElementById('productId').value;
-            const data = {
-                name: document.getElementById('productName').value,
-                description: document.getElementById('productDescription').value,
-                price: document.getElementById('productPrice').value,
-                category_id: document.getElementById('productCategory').value || null,
-                stock_quantity: document.getElementById('productStock').value,
-                is_featured: document.getElementById('productFeatured').checked
-            };
-            
+            const fd = new FormData();
+            fd.append('name', document.getElementById('productName').value);
+            fd.append('description', document.getElementById('productDescription').value);
+            fd.append('price', document.getElementById('productPrice').value);
+            fd.append('category_id', document.getElementById('productCategory').value || '');
+            fd.append('stock_quantity', document.getElementById('productStock').value);
+            fd.append('is_featured', document.getElementById('productFeatured').checked ? 'true' : 'false');
+            const file = document.getElementById('productImageFile').files[0];
+            if (file) fd.append('image', file);
+            if (id) fd.append('remove_image', document.getElementById('productRemoveImage').checked ? 'true' : 'false');
+
             try {
                 const res = await fetch(id ? `${API_BASE}/products/${id}` : `${API_BASE}/products`, {
                     method: id ? 'PUT' : 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
+                    body: fd
                 });
                 const result = await res.json();
                 if (res.ok) {
@@ -579,19 +597,15 @@
             }
         }
 
-        async function uploadProductImage(id) {
-            document.getElementById('uploadType').value = 'product';
-            document.getElementById('uploadId').value = id;
-            showTab('upload');
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab')[3].classList.add('active');
-        }
-
         // Category functions
         function showCategoryModal(id = null) {
             document.getElementById('categoryModalTitle').textContent = id ? 'Edit Category' : 'Add Category';
             document.getElementById('categoryForm').reset();
             document.getElementById('categoryId').value = id || '';
+            document.getElementById('categoryImageFile').value = '';
+            document.getElementById('categoryImagePreview').innerHTML = '';
+            document.getElementById('categoryRemoveImage').checked = false;
+            document.getElementById('categoryRemoveImageRow').style.display = id ? 'block' : 'none';
             if (id) {
                 fetch(`${API_BASE}/categories/${id}`)
                     .then(r => r.json())
@@ -599,24 +613,38 @@
                         const c = data.category;
                         document.getElementById('categoryName').value = c.name;
                         document.getElementById('categoryDescription').value = c.description || '';
+                        if (c.image_url) {
+                            document.getElementById('categoryImagePreview').innerHTML = '<p style="font-size:13px;color:#666">Current image:</p><img src="' + c.image_url + '" class="image-preview" style="max-width:140px;border-radius:8px" onerror="this.style.display=\'none\'">';
+                        }
                     });
             }
             document.getElementById('categoryModal').classList.add('active');
         }
 
+        document.getElementById('categoryImageFile').addEventListener('change', function(e) {
+            const f = e.target.files[0];
+            if (!f) return;
+            const r = new FileReader();
+            r.onload = function(ev) {
+                document.getElementById('categoryImagePreview').innerHTML = '<p style="font-size:13px;color:#666">New image:</p><img src="' + ev.target.result + '" style="max-width:140px;border-radius:8px">';
+            };
+            r.readAsDataURL(f);
+        });
+
         document.getElementById('categoryForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const id = document.getElementById('categoryId').value;
-            const data = {
-                name: document.getElementById('categoryName').value,
-                description: document.getElementById('categoryDescription').value
-            };
-            
+            const fd = new FormData();
+            fd.append('name', document.getElementById('categoryName').value);
+            fd.append('description', document.getElementById('categoryDescription').value);
+            const file = document.getElementById('categoryImageFile').files[0];
+            if (file) fd.append('image', file);
+            if (id) fd.append('remove_image', document.getElementById('categoryRemoveImage').checked ? 'true' : 'false');
+
             try {
                 const res = await fetch(id ? `${API_BASE}/categories/${id}` : `${API_BASE}/categories`, {
                     method: id ? 'PUT' : 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
+                    body: fd
                 });
                 const result = await res.json();
                 if (res.ok) {
@@ -651,14 +679,6 @@
             }
         }
 
-        async function uploadCategoryImage(id) {
-            document.getElementById('uploadType').value = 'category';
-            document.getElementById('uploadId').value = id;
-            showTab('upload');
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab')[3].classList.add('active');
-        }
-
         // Order functions
         async function viewOrder(id) {
             try {
@@ -672,17 +692,17 @@
                     <p><strong>Date:</strong> ${new Date(order.created_at).toLocaleString()}</p>
                     <p><strong>Shipping Address:</strong> ${order.street_address}, ${order.city}, ${order.state} ${order.zip_code}</p>
                     <p><strong>Payment Method:</strong> ${order.payment_method}</p>
-                    <p><strong>Subtotal:</strong> $${parseFloat(order.subtotal).toFixed(2)}</p>
-                    <p><strong>Shipping:</strong> $${parseFloat(order.shipping_cost).toFixed(2)}</p>
-                    <p><strong>Total:</strong> $${parseFloat(order.total).toFixed(2)}</p>
-                    <h4 style="margin-top: 20px;">Items:</h4>
+                    <p><strong>Subtotal (UGX):</strong> ${formatUgx(order.subtotal)}</p>
+                    <p><strong>Shipping (UGX):</strong> ${formatUgx(order.shipping_cost)}</p>
+                    <p><strong>Total (UGX):</strong> ${formatUgx(order.total)}</p>
+                    <h4 style="margin-top: 20px;">Line items (amounts in UGX)</h4>
                     <table style="width: 100%; margin-top: 10px;">
                         <thead>
                             <tr>
                                 <th>Product</th>
                                 <th>Quantity</th>
-                                <th>Price</th>
-                                <th>Total</th>
+                                <th>Unit price (UGX)</th>
+                                <th>Line total (UGX)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -690,8 +710,8 @@
                                 <tr>
                                     <td>${item.name}</td>
                                     <td>${item.quantity}</td>
-                                    <td>$${parseFloat(item.price).toFixed(2)}</td>
-                                    <td>$${(parseFloat(item.price) * item.quantity).toFixed(2)}</td>
+                                    <td>${formatUgx(item.price)}</td>
+                                    <td>${formatUgx(parseFloat(item.price) * item.quantity)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -702,52 +722,6 @@
                 showMessage('Error loading order: ' + error.message, 'error');
             }
         }
-
-        // Upload image
-        document.getElementById('uploadImage').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    document.getElementById('uploadPreview').innerHTML = `<img src="${e.target.result}" style="max-width: 200px; border-radius: 8px;">`;
-                };
-                reader.readAsDataURL(file);
-            }
-        });
-
-        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const type = document.getElementById('uploadType').value;
-            const id = document.getElementById('uploadId').value;
-            const file = document.getElementById('uploadImage').files[0];
-            
-            if (!type || !id || !file) {
-                showMessage('Please fill in all fields', 'error');
-                return;
-            }
-            
-            const formData = new FormData();
-            formData.append('image', file);
-            
-            try {
-                const res = await fetch(`${API_BASE}/${type}s/${id}/image`, {
-                    method: 'POST',
-                    body: formData
-                });
-                const result = await res.json();
-                if (res.ok) {
-                    showMessage(result.message, 'success');
-                    document.getElementById('uploadForm').reset();
-                    document.getElementById('uploadPreview').innerHTML = '';
-                    if (type === 'product') loadProducts();
-                    if (type === 'category') loadCategories();
-                } else {
-                    showMessage(result.error, 'error');
-                }
-            } catch (error) {
-                showMessage('Error: ' + error.message, 'error');
-            }
-        });
 
         // Utility functions
         function closeModal(modalId) {

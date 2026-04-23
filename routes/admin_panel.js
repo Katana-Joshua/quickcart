@@ -62,21 +62,38 @@ router.get('/products/:id', async (req, res) => {
   }
 });
 
-// Create product
-router.post('/products', async (req, res) => {
+function toBool(v) {
+  if (v === true || v === 1) return true;
+  const s = String(v === undefined || v === null ? '' : v).toLowerCase();
+  return s === 'true' || s === 'on' || s === '1' || s === 'yes';
+}
+
+function toNullableId(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = parseInt(String(v), 10);
+  return Number.isNaN(n) ? null : n;
+}
+
+// Create product (name, price, fields + optional image in one request, multipart)
+router.post('/products', upload.single('image'), async (req, res) => {
   try {
     const { name, description, price, category_id, stock_quantity, is_featured } = req.body;
-    
-    if (!name || !price) {
+
+    if (!name || price === undefined || price === '') {
       return res.status(400).json({ error: 'Name and price are required' });
     }
-    
+
+    const catId = toNullableId(category_id);
+    const stock = stock_quantity !== undefined && stock_quantity !== '' ? parseInt(String(stock_quantity), 10) : 0;
+    const featured = toBool(is_featured);
+    const imageData = req.file ? req.file.buffer.toString('base64') : null;
+
     const [result] = await pool.execute(
-      'INSERT INTO products (name, description, price, category_id, stock_quantity, is_featured) VALUES (?, ?, ?, ?, ?, ?)',
-      [name, description || null, price, category_id || null, stock_quantity || 0, is_featured || false]
+      'INSERT INTO products (name, description, price, category_id, stock_quantity, is_featured, image_data, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)',
+      [name, description || null, price, catId, Number.isNaN(stock) ? 0 : stock, featured, imageData]
     );
-    
-    res.json({ 
+
+    res.json({
       message: 'Product created successfully',
       product_id: result.insertId
     });
@@ -86,16 +103,33 @@ router.post('/products', async (req, res) => {
   }
 });
 
-// Update product
-router.put('/products/:id', async (req, res) => {
+// Update product (same form; optional new image, or clear image)
+router.put('/products/:id', upload.single('image'), async (req, res) => {
   try {
-    const { name, description, price, category_id, stock_quantity, is_featured } = req.body;
-    
-    await pool.execute(
-      'UPDATE products SET name = ?, description = ?, price = ?, category_id = ?, stock_quantity = ?, is_featured = ? WHERE id = ?',
-      [name, description, price, category_id, stock_quantity, is_featured, req.params.id]
-    );
-    
+    const { name, description, price, category_id, stock_quantity, is_featured, remove_image } = req.body;
+    const id = req.params.id;
+    const catId = toNullableId(category_id);
+    const stock = stock_quantity !== undefined && stock_quantity !== '' ? parseInt(String(stock_quantity), 10) : 0;
+    const featured = toBool(is_featured);
+    const clear = remove_image === 'true' || remove_image === true;
+
+    if (req.file) {
+      await pool.execute(
+        'UPDATE products SET name = ?, description = ?, price = ?, category_id = ?, stock_quantity = ?, is_featured = ?, image_data = ?, image_url = NULL WHERE id = ?',
+        [name, description, price, catId, Number.isNaN(stock) ? 0 : stock, featured, req.file.buffer.toString('base64'), id]
+      );
+    } else if (clear) {
+      await pool.execute(
+        'UPDATE products SET name = ?, description = ?, price = ?, category_id = ?, stock_quantity = ?, is_featured = ?, image_data = NULL, image_url = NULL WHERE id = ?',
+        [name, description, price, catId, Number.isNaN(stock) ? 0 : stock, featured, id]
+      );
+    } else {
+      await pool.execute(
+        'UPDATE products SET name = ?, description = ?, price = ?, category_id = ?, stock_quantity = ?, is_featured = ? WHERE id = ?',
+        [name, description, price, catId, Number.isNaN(stock) ? 0 : stock, featured, id]
+      );
+    }
+
     res.json({ message: 'Product updated successfully' });
   } catch (error) {
     console.error('Update product error:', error);
@@ -122,7 +156,7 @@ router.post('/products/:id/image', upload.single('image'), async (req, res) => {
     }
     
     const base64String = req.file.buffer.toString('base64');
-    await pool.execute('UPDATE products SET image_data = ? WHERE id = ?', [base64String, req.params.id]);
+    await pool.execute('UPDATE products SET image_data = ?, image_url = NULL WHERE id = ?', [base64String, req.params.id]);
     
     res.json({ message: 'Product image uploaded successfully' });
   } catch (error) {
@@ -169,21 +203,23 @@ router.get('/categories/:id', async (req, res) => {
   }
 });
 
-// Create category
-router.post('/categories', async (req, res) => {
+// Create category (optional image in one request)
+router.post('/categories', upload.single('image'), async (req, res) => {
   try {
     const { name, description } = req.body;
-    
+
     if (!name) {
       return res.status(400).json({ error: 'Name is required' });
     }
-    
+
+    const imageData = req.file ? req.file.buffer.toString('base64') : null;
+
     const [result] = await pool.execute(
-      'INSERT INTO categories (name, description) VALUES (?, ?)',
-      [name, description || null]
+      'INSERT INTO categories (name, description, image_data, image_url) VALUES (?, ?, ?, NULL)',
+      [name, description || null, imageData]
     );
-    
-    res.json({ 
+
+    res.json({
       message: 'Category created successfully',
       category_id: result.insertId
     });
@@ -193,16 +229,30 @@ router.post('/categories', async (req, res) => {
   }
 });
 
-// Update category
-router.put('/categories/:id', async (req, res) => {
+// Update category (optional new image, or clear image)
+router.put('/categories/:id', upload.single('image'), async (req, res) => {
   try {
-    const { name, description } = req.body;
-    
-    await pool.execute(
-      'UPDATE categories SET name = ?, description = ? WHERE id = ?',
-      [name, description, req.params.id]
-    );
-    
+    const { name, description, remove_image } = req.body;
+    const id = req.params.id;
+    const clear = remove_image === 'true' || remove_image === true;
+
+    if (req.file) {
+      await pool.execute(
+        'UPDATE categories SET name = ?, description = ?, image_data = ?, image_url = NULL WHERE id = ?',
+        [name, description, req.file.buffer.toString('base64'), id]
+      );
+    } else if (clear) {
+      await pool.execute(
+        'UPDATE categories SET name = ?, description = ?, image_data = NULL, image_url = NULL WHERE id = ?',
+        [name, description, id]
+      );
+    } else {
+      await pool.execute(
+        'UPDATE categories SET name = ?, description = ? WHERE id = ?',
+        [name, description, id]
+      );
+    }
+
     res.json({ message: 'Category updated successfully' });
   } catch (error) {
     console.error('Update category error:', error);
@@ -229,7 +279,7 @@ router.post('/categories/:id/image', upload.single('image'), async (req, res) =>
     }
     
     const base64String = req.file.buffer.toString('base64');
-    await pool.execute('UPDATE categories SET image_data = ? WHERE id = ?', [base64String, req.params.id]);
+    await pool.execute('UPDATE categories SET image_data = ?, image_url = NULL WHERE id = ?', [base64String, req.params.id]);
     
     res.json({ message: 'Category image uploaded successfully' });
   } catch (error) {
