@@ -94,7 +94,22 @@ router.get('/', async (req, res) => {
   }
 });
 
+function absolutePublicUrl(req, pathOrUrl) {
+  if (!pathOrUrl) return null;
+  const s = String(pathOrUrl).trim();
+  if (/^https?:\/\//i.test(s)) return s;
+  const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(':')[0];
+  if (s.startsWith('//')) {
+    return `${proto}:${s}`;
+  }
+  const host = req.get('x-forwarded-host') || req.get('host');
+  if (!host) return s.startsWith('/') ? s : `/${s}`;
+  if (s.startsWith('/')) return `${proto}://${host}${s}`;
+  return `${proto}://${host}/${s}`;
+}
+
 // Get product image by ID (must come before /:id route)
+// Returns real image bytes or redirects so mobile/web image widgets can load this URL directly.
 router.get('/:id/image', async (req, res) => {
   try {
     const productId = req.params.id;
@@ -109,18 +124,23 @@ router.get('/:id/image', async (req, res) => {
 
     const product = products[0];
     if (product.image_data) {
-      res.json({
-        image_url: `data:image/jpeg;base64,${product.image_data}`,
-        has_image: true
-      });
-    } else if (product.image_url) {
-      res.json({
-        image_url: product.image_url,
-        has_image: false
-      });
-    } else {
-      res.status(404).json({ error: 'Product image not found' });
+      try {
+        const buf = Buffer.from(String(product.image_data).replace(/\s/g, ''), 'base64');
+        if (!buf.length) {
+          return res.status(404).json({ error: 'Invalid image data' });
+        }
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.status(200).send(buf);
+      } catch (e) {
+        return res.status(404).json({ error: 'Invalid image data' });
+      }
     }
+    if (product.image_url) {
+      const target = absolutePublicUrl(req, product.image_url);
+      return res.redirect(302, target);
+    }
+    return res.status(404).json({ error: 'Product image not found' });
   } catch (error) {
     console.error('Get product image error:', error);
     res.status(500).json({ error: 'Internal server error', details: error.message });
