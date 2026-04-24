@@ -4,10 +4,6 @@ const { authenticateToken } = require('../middleware/auth');
 const pool = require('../config/database');
 const { effectiveUnitPrice } = require('../lib/pricing');
 
-/** UGX — keep in sync with Flutter `ShippingRates` in quickartapp. */
-const SHIPPING_STANDARD_UGX = 20000;
-const SHIPPING_EXPRESS_UGX = 60000;
-
 // Create order (checkout)
 router.post('/checkout', authenticateToken, async (req, res) => {
   try {
@@ -37,8 +33,7 @@ router.post('/checkout', authenticateToken, async (req, res) => {
       return sum + lineUnit * item.quantity;
     }, 0);
 
-    const shippingCost =
-      shipping_method === 'Express' ? SHIPPING_EXPRESS_UGX : SHIPPING_STANDARD_UGX;
+    const shippingCost = shipping_method === 'Express' ? 15.00 : 5.00;
     const total = subtotal + shippingCost;
 
     // Generate order number
