@@ -2,7 +2,130 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
 const pool = require('../config/database');
+const { authenticateToken } = require('../middleware/auth');
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files are allowed'), false);
+  },
+});
+
+function absolutePublicUrl(req, pathOrUrl) {
+  if (!pathOrUrl) return null;
+  const s = String(pathOrUrl).trim();
+  if (/^https?:\/\//i.test(s)) return s;
+  const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(':')[0];
+  if (s.startsWith('//')) return `${proto}:${s}`;
+  const host = req.get('x-forwarded-host') || req.get('host');
+  if (!host) return s.startsWith('/') ? s : `/${s}`;
+  if (s.startsWith('/')) return `${proto}://${host}${s}`;
+  return `${proto}://${host}/${s}`;
+}
+
+/**
+ * Public user JSON: never sends profile_image_data. Sets profile_image_url for app.
+ */
+function userResponseFromRow(row) {
+  if (!row) return null;
+  const u = {
+    id: row.id,
+    full_name: row.full_name,
+    email: row.email,
+    phone: row.phone,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+  if (row.profile_image_data) {
+    u.profile_image_url = '/api/auth/profile/image';
+  } else if (row.profile_image_url) {
+    u.profile_image_url = row.profile_image_url;
+  } else {
+    u.profile_image_url = null;
+  }
+  return u;
+}
+
+// —— Profile image (must be before /profile if ever ambiguous; paths are unique) ——
+
+// GET /api/auth/profile/image — same pattern as product images (bytes or redirect)
+router.get('/profile/image', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const [rows] = await pool.execute(
+      'SELECT profile_image_data, profile_image_url FROM users WHERE id = ?',
+      [userId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const r = rows[0];
+    if (r.profile_image_data) {
+      try {
+        const buf = Buffer.from(String(r.profile_image_data).replace(/\s/g, ''), 'base64');
+        if (!buf.length) return res.status(404).json({ error: 'Invalid image data' });
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'private, max-age=3600');
+        return res.status(200).send(buf);
+      } catch (e) {
+        return res.status(404).json({ error: 'Invalid image data' });
+      }
+    }
+    if (r.profile_image_url) {
+      return res.redirect(302, absolutePublicUrl(req, r.profile_image_url));
+    }
+    return res.status(404).json({ error: 'No profile image' });
+  } catch (error) {
+    console.error('Get profile image error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/auth/profile/image — multipart field "image"
+router.post('/profile/image', authenticateToken, upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Image file is required' });
+    }
+    const userId = req.user.userId;
+    const b64 = req.file.buffer.toString('base64');
+    await pool.execute(
+      'UPDATE users SET profile_image_data = ?, profile_image_url = NULL, updated_at = NOW() WHERE id = ?',
+      [b64, userId]
+    );
+    const [users] = await pool.execute('SELECT * FROM users WHERE id = ?', [userId]);
+    res.json({
+      message: 'Profile image updated',
+      user: userResponseFromRow(users[0]),
+    });
+  } catch (error) {
+    console.error('Upload profile image error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/auth/profile/image
+router.delete('/profile/image', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    await pool.execute(
+      'UPDATE users SET profile_image_data = NULL, profile_image_url = NULL, updated_at = NOW() WHERE id = ?',
+      [userId]
+    );
+    const [users] = await pool.execute('SELECT * FROM users WHERE id = ?', [userId]);
+    res.json({
+      message: 'Profile image removed',
+      user: userResponseFromRow(users[0]),
+    });
+  } catch (error) {
+    console.error('Delete profile image error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // Sign Up
 router.post('/signup', async (req, res) => {
@@ -45,7 +168,9 @@ router.post('/signup', async (req, res) => {
       user: {
         id: result.insertId,
         full_name,
-        email
+        email,
+        phone: null,
+        profile_image_url: null,
       }
     });
   } catch (error) {
@@ -65,7 +190,7 @@ router.post('/login', async (req, res) => {
 
     // Find user
     const [users] = await pool.execute(
-      'SELECT id, full_name, email, password FROM users WHERE email = ?',
+      'SELECT * FROM users WHERE email = ?',
       [email]
     );
 
@@ -92,11 +217,7 @@ router.post('/login', async (req, res) => {
     res.json({
       message: 'Login successful',
       token,
-      user: {
-        id: user.id,
-        full_name: user.full_name,
-        email: user.email
-      }
+      user: userResponseFromRow(user)
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -133,12 +254,12 @@ router.post('/forgot-password', async (req, res) => {
 });
 
 // Get user profile
-router.get('/profile', require('../middleware/auth').authenticateToken, async (req, res) => {
+router.get('/profile', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
 
     const [users] = await pool.execute(
-      'SELECT id, full_name, email, phone, created_at FROM users WHERE id = ?',
+      'SELECT * FROM users WHERE id = ?',
       [userId]
     );
 
@@ -153,7 +274,7 @@ router.get('/profile', require('../middleware/auth').authenticateToken, async (r
     );
 
     res.json({
-      user: users[0],
+      user: userResponseFromRow(users[0]),
       addresses
     });
   } catch (error) {
@@ -163,4 +284,3 @@ router.get('/profile', require('../middleware/auth').authenticateToken, async (r
 });
 
 module.exports = router;
-
