@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
 const pool = require('../config/database');
+const { effectiveUnitPrice } = require('../lib/pricing');
 
 // Get user's cart
 router.get('/', authenticateToken, async (req, res) => {
@@ -11,7 +12,7 @@ router.get('/', authenticateToken, async (req, res) => {
     // Optimize: Don't select full image_data for cart list
     const [cartItems] = await pool.execute(
       `SELECT c.id, c.user_id, c.product_id, c.quantity, c.created_at,
-       p.name, p.price, p.image_url, p.stock_quantity,
+       p.name, p.price, p.discount_percent, p.image_url, p.stock_quantity,
        CASE WHEN p.image_data IS NOT NULL THEN 1 ELSE 0 END as has_image
        FROM cart c 
        JOIN products p ON c.product_id = p.id 
@@ -22,13 +23,17 @@ router.get('/', authenticateToken, async (req, res) => {
 
     // Convert to response format - include image URL if available
     const cartItemsWithImages = cartItems.map(item => {
+      const listUnit = parseFloat(item.price);
+      const eff = effectiveUnitPrice({ price: item.price, discount_percent: item.discount_percent });
+      const onSale = Math.abs(eff - listUnit) > 0.0001;
       const result = {
         id: item.id,
         user_id: item.user_id,
         product_id: item.product_id,
         quantity: item.quantity,
         name: item.name,
-        price: item.price.toString(),
+        price: String(eff),
+        list_unit_price: onSale ? item.price.toString() : null,
         stock_quantity: item.stock_quantity,
         created_at: item.created_at
       };
@@ -44,7 +49,7 @@ router.get('/', authenticateToken, async (req, res) => {
       return result;
     });
 
-    // Calculate subtotal
+    // Calculate subtotal (price is already effective unit)
     const subtotal = cartItemsWithImages.reduce((sum, item) => {
       return sum + (parseFloat(item.price) * item.quantity);
     }, 0);

@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS products (
     name VARCHAR(255) NOT NULL,
     description TEXT,
     price DECIMAL(10, 2) NOT NULL,
+    discount_percent DECIMAL(5, 2) NULL DEFAULT NULL,
     category_id INT,
     image_url VARCHAR(500),
     image_data LONGTEXT,

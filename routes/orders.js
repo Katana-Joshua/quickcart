@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
 const pool = require('../config/database');
+const { effectiveUnitPrice } = require('../lib/pricing');
 
 // Create order (checkout)
 router.post('/checkout', authenticateToken, async (req, res) => {
@@ -15,7 +16,7 @@ router.post('/checkout', authenticateToken, async (req, res) => {
 
     // Get cart items
     const [cartItems] = await pool.execute(
-      `SELECT c.*, p.price, p.name 
+      `SELECT c.*, p.price, p.discount_percent, p.name 
        FROM cart c 
        JOIN products p ON c.product_id = p.id 
        WHERE c.user_id = ?`,
@@ -26,9 +27,10 @@ router.post('/checkout', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Cart is empty' });
     }
 
-    // Calculate totals
+    // Calculate totals (use effective unit price per line)
     const subtotal = cartItems.reduce((sum, item) => {
-      return sum + (parseFloat(item.price) * item.quantity);
+      const lineUnit = effectiveUnitPrice({ price: item.price, discount_percent: item.discount_percent });
+      return sum + lineUnit * item.quantity;
     }, 0);
 
     const shippingCost = shipping_method === 'Express' ? 15.00 : 5.00;
@@ -56,11 +58,12 @@ router.post('/checkout', authenticateToken, async (req, res) => {
 
       const orderId = orderResult.insertId;
 
-      // Create order items
+      // Create order items (store unit price as charged at checkout)
       for (const item of cartItems) {
+        const lineUnit = effectiveUnitPrice({ price: item.price, discount_percent: item.discount_percent });
         await connection.execute(
           'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)',
-          [orderId, item.product_id, item.quantity, item.price]
+          [orderId, item.product_id, item.quantity, lineUnit]
         );
 
         // Update product stock

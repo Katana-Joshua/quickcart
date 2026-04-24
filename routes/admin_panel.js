@@ -74,10 +74,19 @@ function toNullableId(v) {
   return Number.isNaN(n) ? null : n;
 }
 
+/** 1–100 = percent off; empty = no sale */
+function toNullableDiscount(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = parseFloat(String(v));
+  if (Number.isNaN(n) || n <= 0) return null;
+  if (n > 100) return 100;
+  return n;
+}
+
 // Create product (name, price, fields + optional image in one request, multipart)
 router.post('/products', upload.single('image'), async (req, res) => {
   try {
-    const { name, description, price, category_id, stock_quantity, is_featured } = req.body;
+    const { name, description, price, category_id, stock_quantity, is_featured, discount_percent } = req.body;
 
     if (!name || price === undefined || price === '') {
       return res.status(400).json({ error: 'Name and price are required' });
@@ -87,10 +96,11 @@ router.post('/products', upload.single('image'), async (req, res) => {
     const stock = stock_quantity !== undefined && stock_quantity !== '' ? parseInt(String(stock_quantity), 10) : 0;
     const featured = toBool(is_featured);
     const imageData = req.file ? req.file.buffer.toString('base64') : null;
+    const disc = toNullableDiscount(discount_percent);
 
     const [result] = await pool.execute(
-      'INSERT INTO products (name, description, price, category_id, stock_quantity, is_featured, image_data, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)',
-      [name, description || null, price, catId, Number.isNaN(stock) ? 0 : stock, featured, imageData]
+      'INSERT INTO products (name, description, price, discount_percent, category_id, stock_quantity, is_featured, image_data, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)',
+      [name, description || null, price, disc, catId, Number.isNaN(stock) ? 0 : stock, featured, imageData]
     );
 
     res.json({
@@ -106,27 +116,28 @@ router.post('/products', upload.single('image'), async (req, res) => {
 // Update product (same form; optional new image, or clear image)
 router.put('/products/:id', upload.single('image'), async (req, res) => {
   try {
-    const { name, description, price, category_id, stock_quantity, is_featured, remove_image } = req.body;
+    const { name, description, price, category_id, stock_quantity, is_featured, remove_image, discount_percent } = req.body;
     const id = req.params.id;
     const catId = toNullableId(category_id);
     const stock = stock_quantity !== undefined && stock_quantity !== '' ? parseInt(String(stock_quantity), 10) : 0;
     const featured = toBool(is_featured);
     const clear = remove_image === 'true' || remove_image === true;
+    const disc = toNullableDiscount(discount_percent);
 
     if (req.file) {
       await pool.execute(
-        'UPDATE products SET name = ?, description = ?, price = ?, category_id = ?, stock_quantity = ?, is_featured = ?, image_data = ?, image_url = NULL WHERE id = ?',
-        [name, description, price, catId, Number.isNaN(stock) ? 0 : stock, featured, req.file.buffer.toString('base64'), id]
+        'UPDATE products SET name = ?, description = ?, price = ?, discount_percent = ?, category_id = ?, stock_quantity = ?, is_featured = ?, image_data = ?, image_url = NULL WHERE id = ?',
+        [name, description, price, disc, catId, Number.isNaN(stock) ? 0 : stock, featured, req.file.buffer.toString('base64'), id]
       );
     } else if (clear) {
       await pool.execute(
-        'UPDATE products SET name = ?, description = ?, price = ?, category_id = ?, stock_quantity = ?, is_featured = ?, image_data = NULL, image_url = NULL WHERE id = ?',
-        [name, description, price, catId, Number.isNaN(stock) ? 0 : stock, featured, id]
+        'UPDATE products SET name = ?, description = ?, price = ?, discount_percent = ?, category_id = ?, stock_quantity = ?, is_featured = ?, image_data = NULL, image_url = NULL WHERE id = ?',
+        [name, description, price, disc, catId, Number.isNaN(stock) ? 0 : stock, featured, id]
       );
     } else {
       await pool.execute(
-        'UPDATE products SET name = ?, description = ?, price = ?, category_id = ?, stock_quantity = ?, is_featured = ? WHERE id = ?',
-        [name, description, price, catId, Number.isNaN(stock) ? 0 : stock, featured, id]
+        'UPDATE products SET name = ?, description = ?, price = ?, discount_percent = ?, category_id = ?, stock_quantity = ?, is_featured = ? WHERE id = ?',
+        [name, description, price, disc, catId, Number.isNaN(stock) ? 0 : stock, featured, id]
       );
     }
 

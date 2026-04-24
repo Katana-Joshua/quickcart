@@ -259,6 +259,7 @@
                             <th>Image</th>
                             <th>Name</th>
                             <th>Price (UGX)</th>
+                            <th>Sale</th>
                             <th>Category</th>
                             <th>Stock</th>
                             <th>Featured</th>
@@ -344,6 +345,10 @@
                     <div class="form-group">
                         <label>Price (UGX) *</label>
                         <input type="number" id="productPrice" min="0" step="1" required placeholder="e.g. 150000">
+                    </div>
+                    <div class="form-group">
+                        <label>Discount % (optional)</label>
+                        <input type="number" id="productDiscount" min="0" max="100" step="0.5" placeholder="0 = no sale, e.g. 30 for 30% off">
                     </div>
                     <div class="form-group">
                         <label>Category</label>
@@ -438,12 +443,16 @@
                 const res = await fetch(`${API_BASE}/products`);
                 const data = await res.json();
                 const tbody = document.querySelector('#productsTable tbody');
-                tbody.innerHTML = data.products.map(p => `
+                tbody.innerHTML = data.products.map(p => {
+                    const d = p.discount_percent;
+                    const sale = (d != null && parseFloat(d) > 0) ? (parseFloat(d) + '% off') : '—';
+                    return `
                     <tr>
                         <td>${p.id}</td>
                         <td><img src="${p.image_url || 'https://via.placeholder.com/60'}" class="image-preview" onerror="this.src='https://via.placeholder.com/60'"></td>
                         <td>${p.name}</td>
                         <td>UGX ${formatUgx(p.price)}</td>
+                        <td>${sale}</td>
                         <td>${p.category_name || 'N/A'}</td>
                         <td>${p.stock_quantity}</td>
                         <td>${p.is_featured ? '<span class="badge success">Yes</span>' : '<span class="badge">No</span>'}</td>
@@ -452,7 +461,8 @@
                             <button onclick="deleteProduct(${p.id})" class="danger">Delete</button>
                         </td>
                     </tr>
-                `).join('');
+                `;
+                }).join('');
             } catch (error) {
                 showMessage('Error loading products: ' + error.message, 'error');
             }
@@ -524,6 +534,8 @@
                         document.getElementById('productName').value = p.name;
                         document.getElementById('productDescription').value = p.description || '';
                         document.getElementById('productPrice').value = p.price;
+                        const dp = p.discount_percent;
+                        document.getElementById('productDiscount').value = (dp != null && parseFloat(dp) > 0) ? dp : '';
                         document.getElementById('productCategory').value = p.category_id || '';
                         document.getElementById('productStock').value = p.stock_quantity;
                         document.getElementById('productFeatured').checked = !!p.is_featured;
@@ -552,6 +564,7 @@
             fd.append('name', document.getElementById('productName').value);
             fd.append('description', document.getElementById('productDescription').value);
             fd.append('price', document.getElementById('productPrice').value);
+            fd.append('discount_percent', document.getElementById('productDiscount').value || '');
             fd.append('category_id', document.getElementById('productCategory').value || '');
             fd.append('stock_quantity', document.getElementById('productStock').value);
             fd.append('is_featured', document.getElementById('productFeatured').checked ? 'true' : 'false');

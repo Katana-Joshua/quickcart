@@ -1,16 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/database');
+const { applyDiscountToProductResult } = require('../lib/pricing');
 
 // Get all products with optional filters
 router.get('/', async (req, res) => {
   try {
-    const { category_id, search, sort_by, featured, limit = 100, offset = 0 } = req.query;
+    const { category_id, search, sort_by, featured, discounted, limit = 100, offset = 0 } = req.query;
     
     // Build query - include image_data but we'll optimize the response
     // For list views, we'll provide endpoint reference instead of full data
     let query = `SELECT 
-      p.id, p.name, p.description, p.price, p.category_id, 
+      p.id, p.name, p.description, p.price, p.discount_percent, p.category_id, 
       p.image_url, p.image_data, p.stock_quantity, p.rating, p.review_count, 
       p.is_featured, p.created_at, p.updated_at,
       c.name as category_name
@@ -34,11 +35,16 @@ router.get('/', async (req, res) => {
       query += ' AND p.is_featured = TRUE';
     }
 
-    // Sorting
+    if (discounted === 'true') {
+      query += ' AND p.discount_percent IS NOT NULL AND p.discount_percent > 0 AND p.discount_percent <= 100';
+    }
+
+    // Sorting (price uses effective sale price when discount applies)
+    const effExpr = '(p.price * (100 - IFNULL(p.discount_percent, 0)) / 100)';
     if (sort_by === 'price_low') {
-      query += ' ORDER BY p.price ASC';
+      query += ` ORDER BY ${effExpr} ASC`;
     } else if (sort_by === 'price_high') {
-      query += ' ORDER BY p.price DESC';
+      query += ` ORDER BY ${effExpr} DESC`;
     } else if (sort_by === 'rating') {
       query += ' ORDER BY p.rating DESC';
     } else {
@@ -84,7 +90,7 @@ router.get('/', async (req, res) => {
         }
       }
 
-      return result;
+      return applyDiscountToProductResult(result, product);
     });
 
     res.json({ products: productsOptimized });
@@ -167,20 +173,23 @@ router.get('/:id', async (req, res) => {
     const product = products[0];
     
     // For detail view, include full image data
-    const productResponse = {
-      id: product.id,
-      name: product.name,
-      description: product.description,
-      price: product.price.toString(),
-      category_id: product.category_id,
-      category_name: product.category_name,
-      stock_quantity: product.stock_quantity,
-      rating: product.rating ? product.rating.toString() : '0.00',
-      review_count: product.review_count || 0,
-      is_featured: product.is_featured ? 1 : 0,
-      created_at: product.created_at,
-      updated_at: product.updated_at,
-    };
+    const productResponse = applyDiscountToProductResult(
+      {
+        id: product.id,
+        name: product.name,
+        description: product.description,
+        price: product.price.toString(),
+        category_id: product.category_id,
+        category_name: product.category_name,
+        stock_quantity: product.stock_quantity,
+        rating: product.rating ? product.rating.toString() : '0.00',
+        review_count: product.review_count || 0,
+        is_featured: product.is_featured ? 1 : 0,
+        created_at: product.created_at,
+        updated_at: product.updated_at,
+      },
+      product
+    );
 
     // Convert image_data to base64 data URL if available
     if (product.image_data) {
