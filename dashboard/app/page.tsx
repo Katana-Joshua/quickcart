@@ -367,19 +367,28 @@ export default function AdminDashboard() {
 
   return (
     <main className="page dashboardShell">
-      <button
-        className="mobileMenuToggle"
-        onClick={() => setIsMobileNavOpen(true)}
-        type="button"
-        aria-label="Open dashboard navigation"
-      >
-        <span className="hamburgerLines" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </span>
-        Menu
-      </button>
+      <header className="mobileNavBar">
+        <div className="mobileBrand">
+          <QuickCartLogo />
+          <div>
+            <strong>QuickCart</strong>
+            <span>Admin</span>
+          </div>
+        </div>
+        <button
+          className="mobileMenuToggle"
+          onClick={() => setIsMobileNavOpen(true)}
+          type="button"
+          aria-label="Open dashboard navigation"
+        >
+          <span className="hamburgerLines" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+          Menu
+        </button>
+      </header>
       {isMobileNavOpen && (
         <button
           className="navBackdrop"

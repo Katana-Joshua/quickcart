@@ -146,6 +146,7 @@ textarea {
 }
 
 .mobileMenuToggle,
+.mobileNavBar,
 .navBackdrop,
 .navClose {
   display: none;
@@ -477,20 +478,56 @@ th {
   }
 
   .mobileMenuToggle {
-    position: fixed;
-    top: 0.85rem;
-    left: 0.85rem;
-    z-index: 50;
     display: inline-flex;
     align-items: center;
     gap: 0.55rem;
     width: auto;
-    height: 46px;
-    min-height: 46px;
+    height: 40px;
+    min-height: 40px;
     padding: 0 0.9rem;
     background: var(--primary);
     color: #fff;
-    box-shadow: 0 18px 45px rgba(17, 20, 237, 0.32);
+    box-shadow: 0 10px 24px rgba(17, 20, 237, 0.22);
+  }
+
+  .mobileNavBar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 45;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    height: 64px;
+    padding: 0 0.85rem;
+    background: rgba(255, 255, 255, 0.92);
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 12px 35px rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(14px);
+  }
+
+  .mobileBrand {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-width: 0;
+  }
+
+  .mobileBrand strong,
+  .mobileBrand span {
+    display: block;
+  }
+
+  .mobileBrand strong {
+    line-height: 1.1;
+  }
+
+  .mobileBrand span {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 700;
   }
 
   .hamburgerLines {
@@ -584,7 +621,7 @@ th {
   }
 
   .main {
-    padding: 4.35rem 0.85rem 1rem;
+    padding: 5rem 0.85rem 1rem;
   }
 
   .topbar {
@@ -742,7 +779,7 @@ th {
 
 @media (max-width: 420px) {
   .main {
-    padding: 4.1rem 0.7rem 0.75rem;
+    padding: 4.75rem 0.7rem 0.75rem;
   }
 
   .stats {
