@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const pool = require('../config/database');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
@@ -19,18 +20,26 @@ const upload = multer({
   }
 });
 
+router.use(authenticateToken, requireAdmin);
+
 // ========== PRODUCTS ==========
 
 // Get all products
 router.get('/products', async (req, res) => {
   try {
     const [products] = await pool.execute(
-      'SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id ORDER BY p.created_at DESC'
+      `SELECT p.id, p.name, p.description, p.price, p.discount_percent, p.category_id,
+       p.image_url, CASE WHEN p.image_data IS NOT NULL THEN 1 ELSE 0 END as has_image_data,
+       p.stock_quantity, p.rating, p.review_count, p.is_featured, p.created_at, p.updated_at,
+       c.name as category_name
+       FROM products p
+       LEFT JOIN categories c ON p.category_id = c.id
+       ORDER BY p.created_at DESC`
     );
     
     const productsWithImages = products.map(product => ({
       ...product,
-      image_url: product.image_data ? `data:image/jpeg;base64,${product.image_data}` : product.image_url
+      image_url: product.image_url || (product.has_image_data ? `/api/products/${product.id}/image` : null)
     }));
     
     res.json({ products: productsWithImages });
@@ -356,6 +365,32 @@ router.get('/orders/:id', async (req, res) => {
     });
   } catch (error) {
     console.error('Get order error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update order status
+router.put('/orders/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    const allowedStatuses = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
+
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ error: 'Invalid order status' });
+    }
+
+    const [result] = await pool.execute(
+      'UPDATE orders SET status = ? WHERE id = ?',
+      [status, req.params.id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    res.json({ message: 'Order status updated successfully' });
+  } catch (error) {
+    console.error('Update order status error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

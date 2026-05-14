@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const pool = require('../config/database');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 // Configure multer for memory storage (we'll convert to base64)
 const storage = multer.memoryStorage();
@@ -22,7 +22,7 @@ const upload = multer({
 });
 
 // Upload product image (file upload)
-router.post('/products/:id/image', authenticateToken, upload.single('image'), async (req, res) => {
+router.post('/products/:id/image', authenticateToken, requireAdmin, upload.single('image'), async (req, res) => {
   try {
     const productId = req.params.id;
     
@@ -49,7 +49,7 @@ router.post('/products/:id/image', authenticateToken, upload.single('image'), as
 });
 
 // Upload product image (base64 string)
-router.post('/products/:id/image-base64', authenticateToken, async (req, res) => {
+router.post('/products/:id/image-base64', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const productId = req.params.id;
     const { image_data } = req.body; // Base64 encoded image string
@@ -80,7 +80,7 @@ router.post('/products/:id/image-base64', authenticateToken, async (req, res) =>
 });
 
 // Upload category image (file upload)
-router.post('/categories/:id/image', authenticateToken, upload.single('image'), async (req, res) => {
+router.post('/categories/:id/image', authenticateToken, requireAdmin, upload.single('image'), async (req, res) => {
   try {
     const categoryId = req.params.id;
     
@@ -107,7 +107,7 @@ router.post('/categories/:id/image', authenticateToken, upload.single('image'), 
 });
 
 // Upload category image (base64 string)
-router.post('/categories/:id/image-base64', authenticateToken, async (req, res) => {
+router.post('/categories/:id/image-base64', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const categoryId = req.params.id;
     const { image_data } = req.body;

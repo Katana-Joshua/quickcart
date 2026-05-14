@@ -3,97 +3,101 @@ const router = express.Router();
 const pool = require('../config/database');
 const { applyDiscountToProductResult } = require('../lib/pricing');
 
+function toPositiveInt(value, fallback, max) {
+  const n = parseInt(String(value), 10);
+  if (Number.isNaN(n) || n < 0) return fallback;
+  return Math.min(n, max);
+}
+
+function mapProductListItem(req, product) {
+  const result = {
+    id: product.id,
+    name: product.name,
+    description: product.description,
+    price: product.price.toString(),
+    category_id: product.category_id,
+    category_name: product.category_name,
+    stock_quantity: product.stock_quantity,
+    rating: product.rating ? product.rating.toString() : '0.00',
+    review_count: product.review_count || 0,
+    is_featured: product.is_featured ? 1 : 0,
+    created_at: product.created_at,
+    updated_at: product.updated_at,
+  };
+
+  if (product.image_url) {
+    result.image_url = product.image_url;
+  } else if (product.has_image_data) {
+    result.image_url = `/api/products/${product.id}/image`;
+  }
+
+  return applyDiscountToProductResult(result, product);
+}
+
+function productListSelect() {
+  return `SELECT 
+    p.id, p.name, p.description, p.price, p.discount_percent, p.category_id, 
+    p.image_url, CASE WHEN p.image_data IS NOT NULL THEN 1 ELSE 0 END as has_image_data,
+    p.stock_quantity, p.rating, p.review_count, p.is_featured, p.created_at, p.updated_at,
+    c.name as category_name
+  FROM products p 
+  LEFT JOIN categories c ON p.category_id = c.id`;
+}
+
+async function getProductList(req, {
+  category_id,
+  search,
+  sort_by,
+  featured,
+  discounted,
+  limit = 100,
+  offset = 0,
+} = {}) {
+  let query = `${productListSelect()} WHERE 1=1`;
+  const params = [];
+
+  if (category_id) {
+    query += ' AND p.category_id = ?';
+    params.push(category_id);
+  }
+
+  if (search) {
+    query += ' AND (p.name LIKE ? OR p.description LIKE ?)';
+    const searchTerm = `%${search}%`;
+    params.push(searchTerm, searchTerm);
+  }
+
+  if (featured === 'true' || featured === true) {
+    query += ' AND p.is_featured = TRUE';
+  }
+
+  if (discounted === 'true' || discounted === true) {
+    query += ' AND p.discount_percent IS NOT NULL AND p.discount_percent > 0 AND p.discount_percent <= 100';
+  }
+
+  const effExpr = '(p.price * (100 - IFNULL(p.discount_percent, 0)) / 100)';
+  if (sort_by === 'price_low') {
+    query += ` ORDER BY ${effExpr} ASC`;
+  } else if (sort_by === 'price_high') {
+    query += ` ORDER BY ${effExpr} DESC`;
+  } else if (sort_by === 'rating') {
+    query += ' ORDER BY p.rating DESC';
+  } else {
+    query += ' ORDER BY p.created_at DESC';
+  }
+
+  query += ' LIMIT ? OFFSET ?';
+  params.push(toPositiveInt(limit, 100, 100), toPositiveInt(offset, 0, 100000));
+
+  const [products] = await pool.execute(query, params);
+  return products.map(product => mapProductListItem(req, product));
+}
+
 // Get all products with optional filters
 router.get('/', async (req, res) => {
   try {
-    const { category_id, search, sort_by, featured, discounted, limit = 100, offset = 0 } = req.query;
-    
-    // Build query - include image_data but we'll optimize the response
-    // For list views, we'll provide endpoint reference instead of full data
-    let query = `SELECT 
-      p.id, p.name, p.description, p.price, p.discount_percent, p.category_id, 
-      p.image_url, p.image_data, p.stock_quantity, p.rating, p.review_count, 
-      p.is_featured, p.created_at, p.updated_at,
-      c.name as category_name
-    FROM products p 
-    LEFT JOIN categories c ON p.category_id = c.id 
-    WHERE 1=1`;
-    const params = [];
-
-    if (category_id) {
-      query += ' AND p.category_id = ?';
-      params.push(category_id);
-    }
-
-    if (search) {
-      query += ' AND (p.name LIKE ? OR p.description LIKE ?)';
-      const searchTerm = `%${search}%`;
-      params.push(searchTerm, searchTerm);
-    }
-
-    if (featured === 'true') {
-      query += ' AND p.is_featured = TRUE';
-    }
-
-    if (discounted === 'true') {
-      query += ' AND p.discount_percent IS NOT NULL AND p.discount_percent > 0 AND p.discount_percent <= 100';
-    }
-
-    // Sorting (price uses effective sale price when discount applies)
-    const effExpr = '(p.price * (100 - IFNULL(p.discount_percent, 0)) / 100)';
-    if (sort_by === 'price_low') {
-      query += ` ORDER BY ${effExpr} ASC`;
-    } else if (sort_by === 'price_high') {
-      query += ` ORDER BY ${effExpr} DESC`;
-    } else if (sort_by === 'rating') {
-      query += ' ORDER BY p.rating DESC';
-    } else {
-      query += ' ORDER BY p.created_at DESC';
-    }
-
-    // Add pagination
-    query += ' LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
-
-    const [products] = await pool.execute(query, params);
-
-    // Optimize response - for list views, don't send full base64 image_data
-    // Instead, provide data URL only if image_data exists and no image_url
-    const productsOptimized = products.map(product => {
-      const result = {
-        id: product.id,
-        name: product.name,
-        description: product.description,
-        price: product.price.toString(),
-        category_id: product.category_id,
-        category_name: product.category_name,
-        stock_quantity: product.stock_quantity,
-        rating: product.rating ? product.rating.toString() : '0.00',
-        review_count: product.review_count || 0,
-        is_featured: product.is_featured ? 1 : 0,
-        created_at: product.created_at,
-        updated_at: product.updated_at,
-      };
-
-      // Handle images - prefer image_url, use image_data only if no URL exists
-      // For list views, we still need to provide images, but we'll limit the size
-      if (product.image_url) {
-        result.image_url = product.image_url;
-      } else if (product.image_data) {
-        // Only include image_data if it's reasonably small (less than 100KB base64)
-        // Otherwise provide endpoint reference
-        if (product.image_data.length < 100000) {
-          result.image_url = `data:image/jpeg;base64,${product.image_data}`;
-        } else {
-          // For large images, provide endpoint
-          result.image_url = `/api/products/${product.id}/image`;
-        }
-      }
-
-      return applyDiscountToProductResult(result, product);
-    });
-
-    res.json({ products: productsOptimized });
+    const products = await getProductList(req, req.query);
+    res.json({ products });
   } catch (error) {
     console.error('Get products error:', error);
     res.status(500).json({ error: 'Internal server error', details: error.message });
@@ -113,6 +117,43 @@ function absolutePublicUrl(req, pathOrUrl) {
   if (s.startsWith('/')) return `${proto}://${host}${s}`;
   return `${proto}://${host}/${s}`;
 }
+
+// Home bootstrap data for the mobile app. This avoids several startup round trips.
+router.get('/home', async (req, res) => {
+  try {
+    const [categories] = await pool.execute(
+      `SELECT id, name, description, image_url, 
+       CASE WHEN image_data IS NOT NULL THEN 1 ELSE 0 END as has_image,
+       created_at 
+       FROM categories 
+       ORDER BY name`
+    );
+
+    const [featuredProducts, recommendedProducts, saleProducts] = await Promise.all([
+      getProductList(req, { featured: true, limit: 24 }),
+      getProductList(req, { limit: 10 }),
+      getProductList(req, { discounted: true, limit: 8 }),
+    ]);
+
+    res.setHeader('Cache-Control', 'private, max-age=30');
+    res.json({
+      categories: categories.map(category => ({
+        id: category.id,
+        name: category.name,
+        description: category.description,
+        image_url: category.image_url || null,
+        has_image: category.has_image || 0,
+        created_at: category.created_at
+      })),
+      featured_products: featuredProducts,
+      recommended_products: recommendedProducts,
+      sale_products: saleProducts,
+    });
+  } catch (error) {
+    console.error('Get home data error:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+});
 
 // Get product image by ID (must come before /:id route)
 // Returns real image bytes or redirects so mobile/web image widgets can load this URL directly.

@@ -3,10 +3,16 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
 const compression = require('compression');
+const next = require('next');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const nextApp = next({
+  dev: process.env.NODE_ENV !== 'production',
+  dir: path.join(__dirname, 'dashboard'),
+});
+const handleNextRequest = nextApp.getRequestHandler();
 
 // Middleware
 app.use(compression()); // Enable gzip compression for responses
@@ -14,7 +20,7 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '10mb' })); // Limit JSON payload size
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-// Serve static files (upload page)
+// Serve static assets.
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Routes
@@ -23,32 +29,26 @@ app.use('/api/products', require('./routes/products'));
 app.use('/api/cart', require('./routes/cart'));
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/admin', require('./routes/admin'));
-app.use('/api/upload', require('./routes/upload')); // Simple upload route (no auth required)
-app.use('/api/panel', require('./routes/admin_panel')); // Admin panel routes (no auth required)
+app.use('/api/upload', require('./routes/upload'));
+app.use('/api/panel', require('./routes/admin_panel'));
 
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'QuickCart API is running' });
 });
 
-// Admin panel route
-app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
-});
+nextApp.prepare().then(() => {
+  app.all('*', (req, res) => handleNextRequest(req, res));
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
-});
- 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`QuickCart API server is running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/api/health`);
-  console.log(`Network access: http://192.168.1.5:${PORT}/api/health`);
-  console.log(`Image Upload Page: http://localhost:${PORT}/upload.html`);
-  console.log(`Image Upload Page (Network): http://192.168.1.5:${PORT}/upload.html`);
-  console.log(`Admin Panel: http://localhost:${PORT}/admin`);
-  console.log(`Admin Panel (Network): http://192.168.1.5:${PORT}/admin`);
+  // Error handling middleware
+  app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ error: 'Something went wrong!' });
+  });
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`QuickCart Dashboard: http://localhost:${PORT}`);
+    console.log(`QuickCart API: http://localhost:${PORT}/api/health`);
+  });
 });
 

@@ -37,6 +37,7 @@ function userResponseFromRow(row) {
     full_name: row.full_name,
     email: row.email,
     phone: row.phone,
+    is_admin: row.is_admin ? 1 : 0,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -157,7 +158,7 @@ router.post('/signup', async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { userId: result.insertId, email },
+      { userId: result.insertId, email, isAdmin: false },
       process.env.JWT_SECRET || 'your_jwt_secret_key_here',
       { expiresIn: '7d' }
     );
@@ -170,6 +171,7 @@ router.post('/signup', async (req, res) => {
         full_name,
         email,
         phone: null,
+        is_admin: 0,
         profile_image_url: null,
       }
     });
@@ -209,7 +211,7 @@ router.post('/login', async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user.id, email: user.email },
+      { userId: user.id, email: user.email, isAdmin: Boolean(user.is_admin) },
       process.env.JWT_SECRET || 'your_jwt_secret_key_here',
       { expiresIn: '7d' }
     );

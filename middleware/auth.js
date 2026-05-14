@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const pool = require('../config/database');
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -17,5 +18,27 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-module.exports = { authenticateToken };
+const requireAdmin = async (req, res, next) => {
+  try {
+    if (!req.user?.userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const [users] = await pool.execute(
+      'SELECT is_admin FROM users WHERE id = ?',
+      [req.user.userId]
+    );
+
+    if (users.length === 0 || !users[0].is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Admin authorization error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+module.exports = { authenticateToken, requireAdmin };
 
