@@ -103,6 +103,16 @@ export default function AdminDashboard() {
     () => orders.reduce((sum, order) => sum + Number(order.total || 0), 0),
     [orders],
   );
+  const lowStockProducts = useMemo(
+    () => products
+      .filter(product => Number(product.stock_quantity || 0) <= 25)
+      .slice(0, 5),
+    [products],
+  );
+  const featuredProductsCount = useMemo(
+    () => products.filter(product => product.is_featured === true || product.is_featured === 1).length,
+    [products],
+  );
 
   async function apiFetch(path: string, options: RequestInit = {}, authToken = token) {
     const headers = new Headers(options.headers);
@@ -363,9 +373,12 @@ export default function AdminDashboard() {
         type="button"
         aria-label="Open dashboard navigation"
       >
-        <span />
-        <span />
-        <span />
+        <span className="hamburgerLines" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
+        Menu
       </button>
       {isMobileNavOpen && (
         <button
@@ -424,29 +437,93 @@ export default function AdminDashboard() {
         {error && <div className="error">{error}</div>}
         {message && <p className="successText">{message}</p>}
 
-        <section className="grid stats">
-          <div className="statCard">
-            <span>Products</span>
-            <strong>{products.length}</strong>
-          </div>
-          <div className="statCard">
-            <span>Categories</span>
-            <strong>{categories.length}</strong>
-          </div>
-          <div className="statCard">
-            <span>Orders</span>
-            <strong>{orders.length}</strong>
-          </div>
-          <div className="statCard">
-            <span>Revenue</span>
-            <strong>UGX {revenue.toLocaleString()}</strong>
-          </div>
-        </section>
-
         {activeTab === "overview" && (
-          <section className="panel">
-            <h2>Recent Orders</h2>
-            <OrdersTable orders={orders.slice(0, 8)} onStatusChange={updateOrderStatus} />
+          <section className="dashboardOverview">
+            <section className="grid stats">
+              <div className="statCard">
+                <div className="statIcon">P</div>
+                <div>
+                  <span>Products</span>
+                  <strong>{products.length}</strong>
+                </div>
+              </div>
+              <div className="statCard">
+                <div className="statIcon">C</div>
+                <div>
+                  <span>Categories</span>
+                  <strong>{categories.length}</strong>
+                </div>
+              </div>
+              <div className="statCard">
+                <div className="statIcon">O</div>
+                <div>
+                  <span>Orders</span>
+                  <strong>{orders.length}</strong>
+                </div>
+              </div>
+              <div className="statCard">
+                <div className="statIcon">R</div>
+                <div>
+                  <span>Revenue</span>
+                  <strong>UGX {revenue.toLocaleString()}</strong>
+                </div>
+              </div>
+            </section>
+
+            <section className="overviewGrid">
+              <div className="panel">
+                <div className="sectionHeader">
+                  <div>
+                    <h2>Recent Orders</h2>
+                    <p className="muted">Latest customer activity.</p>
+                  </div>
+                </div>
+                <OrdersTable orders={orders.slice(0, 6)} onStatusChange={updateOrderStatus} />
+              </div>
+
+              <div className="sideStack">
+                <div className="panel">
+                  <div className="sectionHeader">
+                    <div>
+                      <h2>Low Stock</h2>
+                      <p className="muted">Restock these products soon.</p>
+                    </div>
+                  </div>
+                  <div className="listStack">
+                    {lowStockProducts.length === 0 ? (
+                      <p className="muted">All products have healthy stock.</p>
+                    ) : lowStockProducts.map(product => (
+                      <div className="listItem" key={product.id}>
+                        <div>
+                          <strong>{product.name}</strong>
+                          <span>{product.category_name || "Uncategorized"}</span>
+                        </div>
+                        <b>{product.stock_quantity}</b>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="panel">
+                  <div className="sectionHeader">
+                    <div>
+                      <h2>Store Setup</h2>
+                      <p className="muted">Current catalog structure.</p>
+                    </div>
+                  </div>
+                  <div className="summaryGrid">
+                    <div>
+                      <span>Categories</span>
+                      <strong>{categories.length}</strong>
+                    </div>
+                    <div>
+                      <span>Featured</span>
+                      <strong>{featuredProductsCount}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
           </section>
         )}
 
@@ -623,7 +700,6 @@ function OrdersTable({
       <table>
         <thead>
           <tr>
-            <th>Order</th>
             <th>Customer</th>
             <th>Total</th>
             <th>Status</th>
@@ -633,8 +709,7 @@ function OrdersTable({
         <tbody>
           {orders.map(order => (
             <tr key={order.id}>
-              <td className="tablePrimary" data-label="Order"><strong>{order.order_number}</strong></td>
-              <td data-label="Customer">
+              <td className="tablePrimary" data-label="Customer">
                 {order.full_name}
                 <div className="muted">{order.email}</div>
               </td>

@@ -4,8 +4,9 @@
   "description": "QuickCart Backend API",
   "main": "server.js",
   "scripts": {
+    "build": "npm run build:dashboard",
+    "prestart": "npm run build:dashboard",
     "start": "node server.js",
-    "predev": "node scripts/clean-dashboard-cache.js",
     "dev": "nodemon --ignore dashboard/.next server.js",
     "clean:dashboard": "node scripts/clean-dashboard-cache.js",
     "build:dashboard": "next build dashboard",
