@@ -65,14 +65,8 @@ function resolveImageUrl(raw?: string | null) {
 
 function QuickCartLogo() {
   return (
-    <span className="logo" aria-hidden="true">
-      <svg viewBox="0 0 48 48" role="img">
-        <rect x="7" y="14" width="30" height="24" rx="8" />
-        <path d="M16 15c0-5 3.8-9 8.5-9S33 10 33 15" />
-        <path d="M35 19h6l-4 15h-5" />
-        <circle cx="17" cy="40" r="3" />
-        <circle cx="34" cy="40" r="3" />
-      </svg>
+    <span className="logo">
+      <img src="/quickcart.jpg" alt="QuickCart" />
     </span>
   );
 }
@@ -86,9 +80,13 @@ export default function AdminDashboard() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [productForm, setProductForm] = useState<ProductFormState>(blankProductForm);
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [categoryName, setCategoryName] = useState("");
   const [categoryDescription, setCategoryDescription] = useState("");
   const [categoryImage, setCategoryImage] = useState<File | null>(null);
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -179,6 +177,16 @@ export default function AdminDashboard() {
     setProductForm(current => ({ ...current, [field]: value }));
   }
 
+  function openNewProduct() {
+    setProductForm(blankProductForm);
+    setIsProductModalOpen(true);
+  }
+
+  function closeProductModal() {
+    setProductForm(blankProductForm);
+    setIsProductModalOpen(false);
+  }
+
   function editProduct(product: Product) {
     setProductForm({
       id: product.id,
@@ -192,6 +200,7 @@ export default function AdminDashboard() {
       image: null,
     });
     setActiveTab("products");
+    setIsProductModalOpen(true);
   }
 
   async function saveProduct(event: FormEvent<HTMLFormElement>) {
@@ -217,6 +226,7 @@ export default function AdminDashboard() {
       });
 
       setProductForm(blankProductForm);
+      setIsProductModalOpen(false);
       setMessage(productForm.id ? "Product updated." : "Product created.");
       await loadDashboard();
     } catch (err) {
@@ -240,6 +250,30 @@ export default function AdminDashboard() {
     }
   }
 
+  function openNewCategory() {
+    setEditingCategoryId(null);
+    setCategoryName("");
+    setCategoryDescription("");
+    setCategoryImage(null);
+    setIsCategoryModalOpen(true);
+  }
+
+  function editCategory(category: Category) {
+    setEditingCategoryId(category.id);
+    setCategoryName(category.name);
+    setCategoryDescription(category.description || "");
+    setCategoryImage(null);
+    setIsCategoryModalOpen(true);
+  }
+
+  function closeCategoryModal() {
+    setEditingCategoryId(null);
+    setCategoryName("");
+    setCategoryDescription("");
+    setCategoryImage(null);
+    setIsCategoryModalOpen(false);
+  }
+
   async function saveCategory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
@@ -249,11 +283,12 @@ export default function AdminDashboard() {
       body.append("name", categoryName);
       body.append("description", categoryDescription);
       if (categoryImage) body.append("image", categoryImage);
-      await apiFetch("/panel/categories", { method: "POST", body });
-      setCategoryName("");
-      setCategoryDescription("");
-      setCategoryImage(null);
-      setMessage("Category created.");
+      await apiFetch(`/panel/categories${editingCategoryId ? `/${editingCategoryId}` : ""}`, {
+        method: editingCategoryId ? "PUT" : "POST",
+        body,
+      });
+      closeCategoryModal();
+      setMessage(editingCategoryId ? "Category updated." : "Category created.");
       await loadDashboard();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save category");
@@ -314,10 +349,6 @@ export default function AdminDashboard() {
             <button className="primary" disabled={loading} type="submit">
               {loading ? "Signing in..." : "Sign in"}
             </button>
-            <p className="helperText">
-              Create an admin in the backend with <code>ADMIN_EMAIL</code> and{" "}
-              <code>ADMIN_PASSWORD</code>, then run <code>npm run create-admin</code>.
-            </p>
           </div>
         </form>
       </main>
@@ -326,19 +357,48 @@ export default function AdminDashboard() {
 
   return (
     <main className="page dashboardShell">
-      <aside className="sidebar">
+      <button
+        className="mobileMenuToggle"
+        onClick={() => setIsMobileNavOpen(true)}
+        type="button"
+        aria-label="Open dashboard navigation"
+      >
+        <span />
+        <span />
+        <span />
+      </button>
+      {isMobileNavOpen && (
+        <button
+          className="navBackdrop"
+          onClick={() => setIsMobileNavOpen(false)}
+          type="button"
+          aria-label="Close dashboard navigation"
+        />
+      )}
+      <aside className={`sidebar ${isMobileNavOpen ? "open" : ""}`}>
         <div className="brand">
           <QuickCartLogo />
           <div>
             <strong>QuickCart</strong>
             <div className="muted">Official dashboard</div>
           </div>
+          <button
+            className="navClose"
+            onClick={() => setIsMobileNavOpen(false)}
+            type="button"
+            aria-label="Close dashboard navigation"
+          >
+            ×
+          </button>
         </div>
         {(["overview", "products", "categories", "orders"] as const).map(tab => (
           <button
             className={`navButton ${activeTab === tab ? "active" : ""}`}
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => {
+              setActiveTab(tab);
+              setIsMobileNavOpen(false);
+            }}
           >
             {tab[0].toUpperCase() + tab.slice(1)}
           </button>
@@ -391,43 +451,16 @@ export default function AdminDashboard() {
         )}
 
         {activeTab === "products" && (
-          <section className="grid split">
-            <form className="panel formGrid" onSubmit={saveProduct}>
-              <h2>{productForm.id ? "Edit Product" : "New Product"}</h2>
-              <input placeholder="Product name" value={productForm.name} onChange={event => updateProductForm("name", event.target.value)} required />
-              <textarea placeholder="Description" value={productForm.description} onChange={event => updateProductForm("description", event.target.value)} />
-              <div className="row">
-                <input placeholder="Price" value={productForm.price} onChange={event => updateProductForm("price", event.target.value)} required />
-                <input placeholder="Discount %" value={productForm.discount_percent} onChange={event => updateProductForm("discount_percent", event.target.value)} />
+          <section className="panel">
+            <div className="sectionHeader">
+              <div>
+                <h2>Products</h2>
+                <p className="muted">Manage inventory, prices, discounts, and featured products.</p>
               </div>
-              <div className="row">
-                <select value={productForm.category_id} onChange={event => updateProductForm("category_id", event.target.value)}>
-                  <option value="">No category</option>
-                  {categories.map(category => (
-                    <option key={category.id} value={category.id}>{category.name}</option>
-                  ))}
-                </select>
-                <input placeholder="Stock" value={productForm.stock_quantity} onChange={event => updateProductForm("stock_quantity", event.target.value)} />
-              </div>
-              <label className="row">
-                <input checked={productForm.is_featured} onChange={event => updateProductForm("is_featured", event.target.checked)} type="checkbox" />
-                Featured product
-              </label>
-              <input accept="image/*" onChange={(event: ChangeEvent<HTMLInputElement>) => updateProductForm("image", event.target.files?.[0] || null)} type="file" />
-              <div className="row rowEnd">
-                {productForm.id && (
-                  <button className="secondary" onClick={() => setProductForm(blankProductForm)} type="button">
-                    Cancel
-                  </button>
-                )}
-                <button className="primary" disabled={loading} type="submit">
-                  {productForm.id ? "Update product" : "Create product"}
-                </button>
-              </div>
-            </form>
-
-            <section className="panel">
-              <h2>Products</h2>
+              <button className="primary" onClick={openNewProduct} type="button">
+                Add product
+              </button>
+            </div>
               <div className="tableWrap">
                 <table>
                   <thead>
@@ -442,14 +475,14 @@ export default function AdminDashboard() {
                   <tbody>
                     {products.map(product => (
                       <tr key={product.id}>
-                        <td className="row">
+                        <td className="row tablePrimary" data-label="Product">
                           {product.image_url ? <img className="productThumb" src={resolveImageUrl(product.image_url)} alt="" /> : <span className="productThumb" />}
                           <strong>{product.name}</strong>
                         </td>
-                        <td>{product.category_name || "Uncategorized"}</td>
-                        <td>UGX {Number(product.price || 0).toLocaleString()}</td>
-                        <td>{product.stock_quantity}</td>
-                        <td className="row">
+                        <td data-label="Category">{product.category_name || "Uncategorized"}</td>
+                        <td data-label="Price">UGX {Number(product.price || 0).toLocaleString()}</td>
+                        <td data-label="Stock">{product.stock_quantity}</td>
+                        <td className="row tableActions" data-label="Actions">
                           <button className="secondary" onClick={() => editProduct(product)} type="button">Edit</button>
                           <button className="danger" onClick={() => deleteProduct(product.id)} type="button">Delete</button>
                         </td>
@@ -458,21 +491,20 @@ export default function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
-            </section>
           </section>
         )}
 
         {activeTab === "categories" && (
-          <section className="grid split">
-            <form className="panel formGrid" onSubmit={saveCategory}>
-              <h2>New Category</h2>
-              <input placeholder="Category name" value={categoryName} onChange={event => setCategoryName(event.target.value)} required />
-              <textarea placeholder="Description" value={categoryDescription} onChange={event => setCategoryDescription(event.target.value)} />
-              <input accept="image/*" onChange={event => setCategoryImage(event.target.files?.[0] || null)} type="file" />
-              <button className="primary" disabled={loading} type="submit">Create category</button>
-            </form>
-            <section className="panel">
-              <h2>Categories</h2>
+          <section className="panel">
+            <div className="sectionHeader">
+              <div>
+                <h2>Categories</h2>
+                <p className="muted">Organize products into the shops shown in the mobile app.</p>
+              </div>
+              <button className="primary" onClick={openNewCategory} type="button">
+                Add category
+              </button>
+            </div>
               <div className="tableWrap">
                 <table>
                   <thead>
@@ -485,9 +517,10 @@ export default function AdminDashboard() {
                   <tbody>
                     {categories.map(category => (
                       <tr key={category.id}>
-                        <td><strong>{category.name}</strong></td>
-                        <td>{category.description || "No description"}</td>
-                        <td>
+                        <td className="tablePrimary" data-label="Name"><strong>{category.name}</strong></td>
+                        <td data-label="Description">{category.description || "No description"}</td>
+                        <td className="row tableActions" data-label="Actions">
+                          <button className="secondary" onClick={() => editCategory(category)} type="button">Edit</button>
                           <button className="danger" onClick={() => deleteCategory(category.id)} type="button">Delete</button>
                         </td>
                       </tr>
@@ -495,8 +528,74 @@ export default function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
-            </section>
           </section>
+        )}
+
+        {isProductModalOpen && (
+          <div className="modalBackdrop" role="presentation" onMouseDown={closeProductModal}>
+            <div className="modalCard" role="dialog" aria-modal="true" aria-labelledby="product-modal-title" onMouseDown={event => event.stopPropagation()}>
+              <div className="sectionHeader">
+                <div>
+                  <h2 id="product-modal-title">{productForm.id ? "Edit Product" : "Add Product"}</h2>
+                  <p className="muted">Fill in the product details and save changes.</p>
+                </div>
+                <button className="iconButton" onClick={closeProductModal} type="button" aria-label="Close product form">×</button>
+              </div>
+              <form className="formGrid" onSubmit={saveProduct}>
+                <input placeholder="Product name" value={productForm.name} onChange={event => updateProductForm("name", event.target.value)} required />
+                <textarea placeholder="Description" value={productForm.description} onChange={event => updateProductForm("description", event.target.value)} />
+                <div className="row responsiveRow">
+                  <input placeholder="Price" value={productForm.price} onChange={event => updateProductForm("price", event.target.value)} required />
+                  <input placeholder="Discount %" value={productForm.discount_percent} onChange={event => updateProductForm("discount_percent", event.target.value)} />
+                </div>
+                <div className="row responsiveRow">
+                  <select value={productForm.category_id} onChange={event => updateProductForm("category_id", event.target.value)}>
+                    <option value="">No category</option>
+                    {categories.map(category => (
+                      <option key={category.id} value={category.id}>{category.name}</option>
+                    ))}
+                  </select>
+                  <input placeholder="Stock" value={productForm.stock_quantity} onChange={event => updateProductForm("stock_quantity", event.target.value)} />
+                </div>
+                <label className="row">
+                  <input checked={productForm.is_featured} onChange={event => updateProductForm("is_featured", event.target.checked)} type="checkbox" />
+                  Featured product
+                </label>
+                <input accept="image/*" onChange={(event: ChangeEvent<HTMLInputElement>) => updateProductForm("image", event.target.files?.[0] || null)} type="file" />
+                <div className="row rowEnd">
+                  <button className="secondary" onClick={closeProductModal} type="button">Cancel</button>
+                  <button className="primary" disabled={loading} type="submit">
+                    {productForm.id ? "Update product" : "Create product"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {isCategoryModalOpen && (
+          <div className="modalBackdrop" role="presentation" onMouseDown={closeCategoryModal}>
+            <div className="modalCard modalCardSmall" role="dialog" aria-modal="true" aria-labelledby="category-modal-title" onMouseDown={event => event.stopPropagation()}>
+              <div className="sectionHeader">
+                <div>
+                  <h2 id="category-modal-title">{editingCategoryId ? "Edit Category" : "Add Category"}</h2>
+                  <p className="muted">Create clear product groups for shoppers.</p>
+                </div>
+                <button className="iconButton" onClick={closeCategoryModal} type="button" aria-label="Close category form">×</button>
+              </div>
+              <form className="formGrid" onSubmit={saveCategory}>
+                <input placeholder="Category name" value={categoryName} onChange={event => setCategoryName(event.target.value)} required />
+                <textarea placeholder="Description" value={categoryDescription} onChange={event => setCategoryDescription(event.target.value)} />
+                <input accept="image/*" onChange={event => setCategoryImage(event.target.files?.[0] || null)} type="file" />
+                <div className="row rowEnd">
+                  <button className="secondary" onClick={closeCategoryModal} type="button">Cancel</button>
+                  <button className="primary" disabled={loading} type="submit">
+                    {editingCategoryId ? "Update category" : "Create category"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         )}
 
         {activeTab === "orders" && (
@@ -534,20 +633,20 @@ function OrdersTable({
         <tbody>
           {orders.map(order => (
             <tr key={order.id}>
-              <td><strong>{order.order_number}</strong></td>
-              <td>
+              <td className="tablePrimary" data-label="Order"><strong>{order.order_number}</strong></td>
+              <td data-label="Customer">
                 {order.full_name}
                 <div className="muted">{order.email}</div>
               </td>
-              <td>UGX {Number(order.total || 0).toLocaleString()}</td>
-              <td>
+              <td data-label="Total">UGX {Number(order.total || 0).toLocaleString()}</td>
+              <td data-label="Status">
                 <select value={order.status} onChange={event => onStatusChange(order.id, event.target.value)}>
                   {["Pending", "Processing", "Shipped", "Delivered", "Cancelled"].map(status => (
                     <option key={status} value={status}>{status}</option>
                   ))}
                 </select>
               </td>
-              <td>{new Date(order.created_at).toLocaleDateString()}</td>
+              <td data-label="Created">{new Date(order.created_at).toLocaleDateString()}</td>
             </tr>
           ))}
         </tbody>
