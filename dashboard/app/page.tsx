@@ -2,7 +2,7 @@
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/api";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 
 type Product = {
   id: number;
@@ -59,8 +59,8 @@ const blankProductForm: ProductFormState = {
 function resolveImageUrl(raw?: string | null) {
   if (!raw) return "";
   if (raw.startsWith("http") || raw.startsWith("data:")) return raw;
-  const api = new URL(API_BASE);
-  return `${api.origin}${raw.startsWith("/") ? raw : `/${raw}`}`;
+  if (typeof window === "undefined") return raw;
+  return `${window.location.origin}${raw.startsWith("/") ? raw : `/${raw}`}`;
 }
 
 function QuickCartLogo() {
