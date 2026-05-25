@@ -9,6 +9,18 @@ function toPositiveInt(value, fallback, max) {
   return Math.min(n, max);
 }
 
+function mapCategory(category) {
+  const hasImage = category.has_image || 0;
+  return {
+    id: category.id,
+    name: category.name,
+    description: category.description,
+    image_url: category.image_url || (hasImage ? `/api/products/categories/${category.id}/image` : null),
+    has_image: hasImage,
+    created_at: category.created_at,
+  };
+}
+
 function mapProductListItem(req, product) {
   const result = {
     id: product.id,
@@ -97,6 +109,7 @@ async function getProductList(req, {
 router.get('/', async (req, res) => {
   try {
     const products = await getProductList(req, req.query);
+    res.setHeader('Cache-Control', 'public, max-age=15');
     res.json({ products });
   } catch (error) {
     console.error('Get products error:', error);
@@ -135,16 +148,9 @@ router.get('/home', async (req, res) => {
       getProductList(req, { discounted: true, limit: 8 }),
     ]);
 
-    res.setHeader('Cache-Control', 'private, max-age=30');
+    res.setHeader('Cache-Control', 'public, max-age=30');
     res.json({
-      categories: categories.map(category => ({
-        id: category.id,
-        name: category.name,
-        description: category.description,
-        image_url: category.image_url || null,
-        has_image: category.has_image || 0,
-        created_at: category.created_at
-      })),
+      categories: categories.map(mapCategory),
       featured_products: featuredProducts,
       recommended_products: recommendedProducts,
       sale_products: saleProducts,
@@ -152,6 +158,44 @@ router.get('/home', async (req, res) => {
   } catch (error) {
     console.error('Get home data error:', error);
     res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+});
+
+// Category image bytes (must come before /:id routes)
+router.get('/categories/:categoryId/image', async (req, res) => {
+  try {
+    const categoryId = req.params.categoryId;
+    const [categories] = await pool.execute(
+      'SELECT image_data, image_url FROM categories WHERE id = ?',
+      [categoryId]
+    );
+
+    if (categories.length === 0) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    const category = categories[0];
+    if (category.image_data) {
+      try {
+        const buf = Buffer.from(String(category.image_data).replace(/\s/g, ''), 'base64');
+        if (!buf.length) {
+          return res.status(404).json({ error: 'Invalid image data' });
+        }
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.status(200).send(buf);
+      } catch (e) {
+        return res.status(404).json({ error: 'Invalid image data' });
+      }
+    }
+    if (category.image_url) {
+      const target = absolutePublicUrl(req, category.image_url);
+      return res.redirect(302, target);
+    }
+    return res.status(404).json({ error: 'Category image not found' });
+  } catch (error) {
+    console.error('Get category image error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -194,16 +238,13 @@ router.get('/:id/image', async (req, res) => {
   }
 });
 
-// Get product by ID (detail view - includes full image data)
+// Get product by ID (detail view — image served via /:id/image, not inline base64)
 router.get('/:id', async (req, res) => {
   try {
     const productId = req.params.id;
 
     const [products] = await pool.execute(
-      `SELECT p.*, c.name as category_name 
-       FROM products p 
-       LEFT JOIN categories c ON p.category_id = c.id 
-       WHERE p.id = ?`,
+      `${productListSelect()} WHERE p.id = ?`,
       [productId]
     );
 
@@ -212,35 +253,8 @@ router.get('/:id', async (req, res) => {
     }
 
     const product = products[0];
-    
-    // For detail view, include full image data
-    const productResponse = applyDiscountToProductResult(
-      {
-        id: product.id,
-        name: product.name,
-        description: product.description,
-        price: product.price.toString(),
-        category_id: product.category_id,
-        category_name: product.category_name,
-        stock_quantity: product.stock_quantity,
-        rating: product.rating ? product.rating.toString() : '0.00',
-        review_count: product.review_count || 0,
-        is_featured: product.is_featured ? 1 : 0,
-        created_at: product.created_at,
-        updated_at: product.updated_at,
-      },
-      product
-    );
+    const productResponse = mapProductListItem(req, product);
 
-    // Convert image_data to base64 data URL if available
-    if (product.image_data) {
-      productResponse.image_url = `data:image/jpeg;base64,${product.image_data}`;
-      productResponse.image_data = product.image_data; // Include for detail view
-    } else if (product.image_url) {
-      productResponse.image_url = product.image_url;
-    }
-
-    // Get reviews for the product
     const [reviews] = await pool.execute(
       `SELECT pr.*, u.full_name 
        FROM product_reviews pr 
@@ -251,6 +265,7 @@ router.get('/:id', async (req, res) => {
       [productId]
     );
 
+    res.setHeader('Cache-Control', 'public, max-age=30');
     res.json({
       product: productResponse,
       reviews
@@ -273,17 +288,8 @@ router.get('/categories/all', async (req, res) => {
        ORDER BY name`
     );
 
-    // Return optimized categories without full image data
-    const categoriesOptimized = categories.map(category => ({
-      id: category.id,
-      name: category.name,
-      description: category.description,
-      image_url: category.image_url || null,
-      has_image: category.has_image || 0,
-      created_at: category.created_at
-    }));
-
-    res.json({ categories: categoriesOptimized });
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    res.json({ categories: categories.map(mapCategory) });
   } catch (error) {
     console.error('Get categories error:', error);
     res.status(500).json({ error: 'Internal server error', details: error.message });

@@ -8,6 +8,7 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+app.set('trust proxy', 1);
 const nextApp = next({
   dev: process.env.NODE_ENV !== 'production',
   dir: path.join(__dirname, 'dashboard'),
